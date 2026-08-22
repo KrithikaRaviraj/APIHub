@@ -30,6 +30,10 @@ const apiKeySchema = new mongoose.Schema(
       enum: ['active', 'revoked'],
       default: 'active',
     },
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

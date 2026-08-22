@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const Project = require('../models/Project');
 const ApiKey = require('../models/ApiKey');
+const { isExpired } = require('../utils/apiKeyUtils');
 
 const KEY_PREFIX = 'aph_live_';
 
@@ -13,11 +14,24 @@ const verifyProjectOwnership = async (projectId, userId) => {
   return { project };
 };
 
+const parseExpiresInDays = (value) => {
+  if (value === undefined || value === null) return { days: null };
+  if (!Number.isInteger(value) || value <= 0) {
+    return { validationError: 'expiresInDays must be a positive integer' };
+  }
+  return { days: value };
+};
+
 const createApiKey = async (req, res, next) => {
   try {
-    const { name } = req.body;
+    const { name, expiresInDays } = req.body;
     if (!name) {
       return res.status(400).json({ status: 'error', message: 'Key name is required' });
+    }
+
+    const { days, validationError } = parseExpiresInDays(expiresInDays);
+    if (validationError) {
+      return res.status(400).json({ status: 'error', message: validationError });
     }
 
     const { project, error, status } = await verifyProjectOwnership(
@@ -31,12 +45,17 @@ const createApiKey = async (req, res, next) => {
     const prefix = KEY_PREFIX + secret.slice(0, 8);
     const keyHash = hashKey(rawKey);
 
+    const expiresAt = days !== null
+      ? new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+      : null;
+
     const apiKey = await ApiKey.create({
       name,
       prefix,
       keyHash,
       project: project._id,
       createdBy: req.user.id,
+      expiresAt,
     });
 
     res.status(201).json({
@@ -48,6 +67,7 @@ const createApiKey = async (req, res, next) => {
         prefix: apiKey.prefix,
         project: apiKey.project,
         status: apiKey.status,
+        expiresAt: apiKey.expiresAt,
         createdAt: apiKey.createdAt,
       },
     });
@@ -62,10 +82,22 @@ const getApiKeys = async (req, res, next) => {
     if (error) return res.status(status).json({ status: 'error', message: error });
 
     const keys = await ApiKey.find({ project: req.params.projectId })
-      .select('-keyHash')
+      .select('name prefix project createdBy status expiresAt createdAt')
       .sort({ createdAt: -1 });
 
-    res.status(200).json({ status: 'ok', data: { keys } });
+    const keysWithState = keys.map((k) => ({
+      id: k._id,
+      name: k.name,
+      prefix: k.prefix,
+      project: k.project,
+      createdBy: k.createdBy,
+      status: k.status,
+      expiresAt: k.expiresAt,
+      createdAt: k.createdAt,
+      expired: isExpired(k),
+    }));
+
+    res.status(200).json({ status: 'ok', data: { keys: keysWithState } });
   } catch (err) {
     next(err);
   }

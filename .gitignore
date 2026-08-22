@@ -20,3 +20,6 @@ Thumbs.db
 # Editor files
 .vscode/
 .idea/
+
+# Temporary scripts (verification and test scripts, not for production)
+scripts/
