@@ -4,10 +4,8 @@ const { createApiKey, getApiKeys, revokeApiKey } = require('../controllers/apiKe
 
 const router = express.Router();
 
-router.use(protect);
-
-router.post('/projects/:projectId/keys', createApiKey);
-router.get('/projects/:projectId/keys', getApiKeys);
-router.patch('/keys/:id/revoke', revokeApiKey);
+router.post('/projects/:projectId/keys', protect, createApiKey);
+router.get('/projects/:projectId/keys', protect, getApiKeys);
+router.patch('/keys/:id/revoke', protect, revokeApiKey);
 
 module.exports = router;

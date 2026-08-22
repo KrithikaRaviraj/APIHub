@@ -38,4 +38,6 @@ const apiKeySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+apiKeySchema.index({ prefix: 1 }, { unique: true });
+
 module.exports = mongoose.model('ApiKey', apiKeySchema);
