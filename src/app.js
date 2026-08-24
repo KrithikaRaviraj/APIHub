@@ -5,6 +5,7 @@ const authRoutes = require('./routes/authRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 const apiKeyRoutes = require('./routes/apiKeyRoutes');
 const apiTestRoutes = require('./routes/apiTestRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api', apiKeyRoutes);
 app.use('/api/v1', apiTestRoutes);
+app.use('/api/projects', analyticsRoutes);
 
 app.use(errorHandler);
 
