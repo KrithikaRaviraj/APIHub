@@ -47,9 +47,10 @@ const requireApiKey = async (req, res, next) => {
 
     // Attach only safe metadata — never the raw key or keyHash
     req.apiKey = {
-      id: apiKeyDoc._id,
+      id:        apiKeyDoc._id,
       projectId: apiKeyDoc.project,
       createdBy: apiKeyDoc.createdBy,
+      rateLimit: apiKeyDoc.rateLimit,
     };
 
     next();

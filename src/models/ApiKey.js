@@ -34,6 +34,11 @@ const apiKeySchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    rateLimit: {
+      type: Number,
+      default: 100,
+      min: 1,
+    },
   },
   { timestamps: true }
 );
