@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Project = require('../models/Project');
 const ApiKey = require('../models/ApiKey');
 const { isExpired } = require('../utils/apiKeyUtils');
@@ -82,7 +83,7 @@ const getApiKeys = async (req, res, next) => {
     if (error) return res.status(status).json({ status: 'error', message: error });
 
     const keys = await ApiKey.find({ project: req.params.projectId })
-      .select('name prefix project createdBy status expiresAt createdAt')
+      .select('name prefix project createdBy status expiresAt rateLimit createdAt')
       .sort({ createdAt: -1 });
 
     const keysWithState = keys.map((k) => ({
@@ -92,6 +93,7 @@ const getApiKeys = async (req, res, next) => {
       project: k.project,
       createdBy: k.createdBy,
       status: k.status,
+      rateLimit: k.rateLimit,
       expiresAt: k.expiresAt,
       createdAt: k.createdAt,
       expired: isExpired(k),
@@ -139,4 +141,94 @@ const revokeApiKey = async (req, res, next) => {
   }
 };
 
-module.exports = { createApiKey, getApiKeys, revokeApiKey };
+const safeKeyObject = (k) => ({
+  id:        k._id,
+  name:      k.name,
+  prefix:    k.prefix,
+  project:   k.project,
+  createdBy: k.createdBy,
+  status:    k.status,
+  rateLimit: k.rateLimit,
+  expiresAt: k.expiresAt,
+  expired:   isExpired(k),
+  createdAt: k.createdAt,
+  updatedAt: k.updatedAt,
+});
+
+const getApiKey = async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid API key ID' });
+    }
+
+    const apiKey = await ApiKey.findById(req.params.id);
+    if (!apiKey) {
+      return res.status(404).json({ status: 'error', message: 'API key not found' });
+    }
+
+    const { error, status } = await verifyProjectOwnership(apiKey.project.toString(), req.user.id);
+    if (error) return res.status(status).json({ status: 'error', message: error });
+
+    res.status(200).json({ status: 'ok', data: { apiKey: safeKeyObject(apiKey) } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const updateApiKey = async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid API key ID' });
+    }
+
+    const { name, rateLimit, expiresInDays } = req.body;
+    const hasName          = name          !== undefined;
+    const hasRateLimit     = rateLimit     !== undefined;
+    const hasExpiresInDays = 'expiresInDays' in req.body;
+
+    if (!hasName && !hasRateLimit && !hasExpiresInDays) {
+      return res.status(400).json({ status: 'error', message: 'No valid fields provided for update' });
+    }
+
+    if (hasName) {
+      if (typeof name !== 'string' || name.trim() === '') {
+        return res.status(400).json({ status: 'error', message: 'Name must be a non-empty string' });
+      }
+    }
+
+    if (hasRateLimit) {
+      if (!Number.isInteger(rateLimit) || rateLimit < 1) {
+        return res.status(400).json({ status: 'error', message: 'rateLimit must be a positive integer' });
+      }
+    }
+
+    let newExpiresAt;
+    if (hasExpiresInDays) {
+      const { days, validationError } = parseExpiresInDays(expiresInDays);
+      if (validationError) {
+        return res.status(400).json({ status: 'error', message: validationError });
+      }
+      newExpiresAt = days !== null ? new Date(Date.now() + days * 24 * 60 * 60 * 1000) : null;
+    }
+
+    const apiKey = await ApiKey.findById(req.params.id);
+    if (!apiKey) {
+      return res.status(404).json({ status: 'error', message: 'API key not found' });
+    }
+
+    const { error, status } = await verifyProjectOwnership(apiKey.project.toString(), req.user.id);
+    if (error) return res.status(status).json({ status: 'error', message: error });
+
+    if (hasName)          apiKey.name      = name.trim();
+    if (hasRateLimit)     apiKey.rateLimit  = rateLimit;
+    if (hasExpiresInDays) apiKey.expiresAt  = newExpiresAt;
+
+    await apiKey.save();
+
+    res.status(200).json({ status: 'ok', data: { apiKey: safeKeyObject(apiKey) } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createApiKey, getApiKeys, revokeApiKey, getApiKey, updateApiKey };
