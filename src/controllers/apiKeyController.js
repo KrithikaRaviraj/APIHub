@@ -1,19 +1,10 @@
 const crypto = require('crypto');
-const mongoose = require('mongoose');
-const Project = require('../models/Project');
 const ApiKey = require('../models/ApiKey');
 const { isExpired } = require('../utils/apiKeyUtils');
 
 const KEY_PREFIX = 'aph_live_';
 
 const hashKey = (rawKey) => crypto.createHash('sha256').update(rawKey).digest('hex');
-
-const verifyProjectOwnership = async (projectId, userId) => {
-  const project = await Project.findById(projectId);
-  if (!project) return { error: 'Project not found', status: 404 };
-  if (project.owner.toString() !== userId) return { error: 'Access denied', status: 403 };
-  return { project };
-};
 
 const parseExpiresInDays = (value) => {
   if (value === undefined || value === null) return { days: null };
@@ -35,12 +26,6 @@ const createApiKey = async (req, res, next) => {
       return res.status(400).json({ status: 'error', message: validationError });
     }
 
-    const { project, error, status } = await verifyProjectOwnership(
-      req.params.projectId,
-      req.user.id
-    );
-    if (error) return res.status(status).json({ status: 'error', message: error });
-
     const secret = crypto.randomBytes(32).toString('hex');
     const rawKey = KEY_PREFIX + secret;
     const prefix = KEY_PREFIX + secret.slice(0, 8);
@@ -54,7 +39,7 @@ const createApiKey = async (req, res, next) => {
       name,
       prefix,
       keyHash,
-      project: project._id,
+      project: req.project._id,
       createdBy: req.user.id,
       expiresAt,
     });
@@ -79,10 +64,7 @@ const createApiKey = async (req, res, next) => {
 
 const getApiKeys = async (req, res, next) => {
   try {
-    const { error, status } = await verifyProjectOwnership(req.params.projectId, req.user.id);
-    if (error) return res.status(status).json({ status: 'error', message: error });
-
-    const keys = await ApiKey.find({ project: req.params.projectId })
+    const keys = await ApiKey.find({ project: req.project._id })
       .select('name prefix project createdBy status expiresAt rateLimit createdAt')
       .sort({ createdAt: -1 });
 
@@ -107,16 +89,7 @@ const getApiKeys = async (req, res, next) => {
 
 const revokeApiKey = async (req, res, next) => {
   try {
-    const apiKey = await ApiKey.findById(req.params.id);
-    if (!apiKey) {
-      return res.status(404).json({ status: 'error', message: 'API key not found' });
-    }
-
-    const { error, status } = await verifyProjectOwnership(
-      apiKey.project.toString(),
-      req.user.id
-    );
-    if (error) return res.status(status).json({ status: 'error', message: error });
+    const apiKey = req.targetApiKey;
 
     if (apiKey.status === 'revoked') {
       return res.status(400).json({ status: 'error', message: 'API key is already revoked' });
@@ -157,19 +130,7 @@ const safeKeyObject = (k) => ({
 
 const getApiKey = async (req, res, next) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(400).json({ status: 'error', message: 'Invalid API key ID' });
-    }
-
-    const apiKey = await ApiKey.findById(req.params.id);
-    if (!apiKey) {
-      return res.status(404).json({ status: 'error', message: 'API key not found' });
-    }
-
-    const { error, status } = await verifyProjectOwnership(apiKey.project.toString(), req.user.id);
-    if (error) return res.status(status).json({ status: 'error', message: error });
-
-    res.status(200).json({ status: 'ok', data: { apiKey: safeKeyObject(apiKey) } });
+    res.status(200).json({ status: 'ok', data: { apiKey: safeKeyObject(req.targetApiKey) } });
   } catch (err) {
     next(err);
   }
@@ -177,10 +138,6 @@ const getApiKey = async (req, res, next) => {
 
 const updateApiKey = async (req, res, next) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(400).json({ status: 'error', message: 'Invalid API key ID' });
-    }
-
     const { name, rateLimit, expiresInDays } = req.body;
     const hasName          = name          !== undefined;
     const hasRateLimit     = rateLimit     !== undefined;
@@ -211,13 +168,7 @@ const updateApiKey = async (req, res, next) => {
       newExpiresAt = days !== null ? new Date(Date.now() + days * 24 * 60 * 60 * 1000) : null;
     }
 
-    const apiKey = await ApiKey.findById(req.params.id);
-    if (!apiKey) {
-      return res.status(404).json({ status: 'error', message: 'API key not found' });
-    }
-
-    const { error, status } = await verifyProjectOwnership(apiKey.project.toString(), req.user.id);
-    if (error) return res.status(status).json({ status: 'error', message: error });
+    const apiKey = req.targetApiKey;
 
     if (hasName)          apiKey.name      = name.trim();
     if (hasRateLimit)     apiKey.rateLimit  = rateLimit;

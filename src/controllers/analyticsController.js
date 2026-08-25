@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const Project = require('../models/Project');
 const ApiRequestLog = require('../models/ApiRequestLog');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -14,18 +13,6 @@ const parseDate = (str, fieldName) => {
 const getAnalytics = async (req, res, next) => {
   try {
     const { projectId } = req.params;
-
-    if (!mongoose.isValidObjectId(projectId)) {
-      return res.status(400).json({ status: 'error', message: 'Invalid project ID' });
-    }
-
-    const project = await Project.findById(projectId);
-    if (!project) {
-      return res.status(404).json({ status: 'error', message: 'Project not found' });
-    }
-    if (project.owner.toString() !== req.user.id) {
-      return res.status(403).json({ status: 'error', message: 'Access denied' });
-    }
 
     let from, toExclusive, periodTo;
 

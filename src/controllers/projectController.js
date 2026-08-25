@@ -1,4 +1,5 @@
 const Project = require('../models/Project');
+const ProjectMember = require('../models/ProjectMember');
 
 const createProject = async (req, res, next) => {
   try {
@@ -22,7 +23,10 @@ const createProject = async (req, res, next) => {
 
 const getProjects = async (req, res, next) => {
   try {
-    const projects = await Project.find({ owner: req.user.id }).sort({ createdAt: -1 });
+    const memberProjectIds = await ProjectMember.find({ user: req.user.id }).distinct('project');
+    const projects = await Project.find({
+      $or: [{ owner: req.user.id }, { _id: { $in: memberProjectIds } }],
+    }).sort({ createdAt: -1 });
     res.status(200).json({ status: 'ok', data: { projects } });
   } catch (err) {
     next(err);
@@ -31,17 +35,7 @@ const getProjects = async (req, res, next) => {
 
 const getProjectById = async (req, res, next) => {
   try {
-    const project = await Project.findById(req.params.id);
-
-    if (!project) {
-      return res.status(404).json({ status: 'error', message: 'Project not found' });
-    }
-
-    if (project.owner.toString() !== req.user.id) {
-      return res.status(403).json({ status: 'error', message: 'Access denied' });
-    }
-
-    res.status(200).json({ status: 'ok', data: { project } });
+    res.status(200).json({ status: 'ok', data: { project: req.project } });
   } catch (err) {
     next(err);
   }
@@ -49,15 +43,7 @@ const getProjectById = async (req, res, next) => {
 
 const updateProject = async (req, res, next) => {
   try {
-    const project = await Project.findById(req.params.id);
-
-    if (!project) {
-      return res.status(404).json({ status: 'error', message: 'Project not found' });
-    }
-
-    if (project.owner.toString() !== req.user.id) {
-      return res.status(403).json({ status: 'error', message: 'Access denied' });
-    }
+    const project = req.project;
 
     const { name, description } = req.body;
     if (name !== undefined) project.name = name;
@@ -73,17 +59,7 @@ const updateProject = async (req, res, next) => {
 
 const deleteProject = async (req, res, next) => {
   try {
-    const project = await Project.findById(req.params.id);
-
-    if (!project) {
-      return res.status(404).json({ status: 'error', message: 'Project not found' });
-    }
-
-    if (project.owner.toString() !== req.user.id) {
-      return res.status(403).json({ status: 'error', message: 'Access denied' });
-    }
-
-    await project.deleteOne();
+    await req.project.deleteOne();
 
     res.status(200).json({ status: 'ok', message: 'Project deleted' });
   } catch (err) {
